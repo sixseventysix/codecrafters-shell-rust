@@ -11,6 +11,12 @@ fn main() {
         let stdin = io::stdin();
         let mut input = String::new();
         stdin.read_line(&mut input).unwrap();
-        println!("{}: command not found", input.trim());
+
+        match input.as_str() {
+            "exit 0" => { std::process::exit(0); }
+            _ => {
+                println!("{}: command not found", input.trim());
+            }
+        }
     }
 }
