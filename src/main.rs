@@ -11,14 +11,10 @@ fn main() {
         let stdin = io::stdin();
         let mut input = String::new();
         stdin.read_line(&mut input).unwrap();
-        let (cmd, args) = input.trim().split_once(" ").unwrap();
-
-        match cmd {
-            "exit" => { std::process::exit(args.parse::<i32>().unwrap()); }
-            "echo" => { println!("{}", args); }
-            _ => {
-                println!("{}: command not found", input.trim());
-            }
-        }
+        match input.trim() {
+            "exit 0" => std::process::exit(0),
+            input if input.starts_with("echo ") => println!("{}", &input[5..]),
+            input => println!("{}: command not found", input),
+        };
     }
 }
