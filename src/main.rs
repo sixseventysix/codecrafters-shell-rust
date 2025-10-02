@@ -4,6 +4,7 @@ use std::env;
 use std::path::Path;
 use std::os::unix::fs::PermissionsExt;
 use std::process::Command;
+use std::os::unix::process::CommandExt;
 
 fn find_in_path(command: &str) -> Option<String> {
     let path_env = env::var("PATH").ok()?;
@@ -62,6 +63,7 @@ fn main() -> Result<()> {
 
             if let Some(path) = find_in_path(command) {
                 let output = Command::new(path)
+                    .arg0(command)
                     .args(args)
                     .output()?;
 
