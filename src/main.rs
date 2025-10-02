@@ -7,6 +7,51 @@ use std::process::{Command as ProcessCommand, Stdio};
 use std::os::unix::process::CommandExt;
 use std::fs::File;
 
+// Output writer that handles redirection
+struct OutputWriter {
+    stdout_file: Option<File>,
+    stderr_file: Option<File>,
+}
+
+impl OutputWriter {
+    fn new(stdout_redirect: &Option<String>, stderr_redirect: &Option<String>) -> Result<Self> {
+        let stdout_file = if let Some(path) = stdout_redirect {
+            Some(File::create(path)?)
+        } else {
+            None
+        };
+
+        let stderr_file = if let Some(path) = stderr_redirect {
+            Some(File::create(path)?)
+        } else {
+            None
+        };
+
+        Ok(Self {
+            stdout_file,
+            stderr_file,
+        })
+    }
+
+    fn write_stdout(&mut self, content: &str) -> Result<()> {
+        if let Some(ref mut file) = self.stdout_file {
+            writeln!(file, "{}", content)?;
+        } else {
+            println!("{}", content);
+        }
+        Ok(())
+    }
+
+    fn write_stderr(&mut self, content: &str) -> Result<()> {
+        if let Some(ref mut file) = self.stderr_file {
+            writeln!(file, "{}", content)?;
+        } else {
+            eprintln!("{}", content);
+        }
+        Ok(())
+    }
+}
+
 // Built-in commands
 enum BuiltinCommand {
     Exit,
@@ -38,7 +83,7 @@ impl BuiltinCommand {
         }
     }
 
-    fn execute(&self, args: &[&str]) -> Result<()> {
+    fn execute(&self, args: &[&str], writer: &mut OutputWriter) -> Result<()> {
         match self {
             Self::Exit => {
                 if args.first() == Some(&"0") {
@@ -47,25 +92,24 @@ impl BuiltinCommand {
                 Ok(())
             }
             Self::Echo => {
-                println!("{}", args.join(" "));
-                Ok(())
+                writer.write_stdout(&args.join(" "))
             }
             Self::Type => {
                 if let Some(&target) = args.first() {
-                    if let Some(builtin) = BuiltinCommand::from_str(target) {
-                        println!("{} is a shell builtin", builtin.name());
+                    let output = if let Some(builtin) = BuiltinCommand::from_str(target) {
+                        format!("{} is a shell builtin", builtin.name())
                     } else if let Some(path) = find_in_path(target) {
-                        println!("{} is {}", target, path);
+                        format!("{} is {}", target, path)
                     } else {
-                        println!("{}: not found", target);
-                    }
+                        format!("{}: not found", target)
+                    };
+                    writer.write_stdout(&output)?;
                 }
                 Ok(())
             }
             Self::Pwd => {
                 let current_dir = env::current_dir()?;
-                println!("{}", current_dir.display());
-                Ok(())
+                writer.write_stdout(&format!("{}", current_dir.display()))
             }
             Self::Cd => {
                 if let Some(&path) = args.first() {
@@ -76,7 +120,7 @@ impl BuiltinCommand {
                     };
 
                     if let Err(_) = env::set_current_dir(&target_path) {
-                        println!("cd: {}: No such file or directory", path);
+                        writer.write_stderr(&format!("cd: {}: No such file or directory", path))?;
                     }
                 }
                 Ok(())
@@ -310,15 +354,10 @@ fn parse_and_execute(input: &str) -> Result<()> {
     let command = &parsed.args[0];
     let args: Vec<&str> = parsed.args[1..].iter().map(|s| s.as_str()).collect();
 
+    let mut writer = OutputWriter::new(&parsed.stdout_redirect, &parsed.stderr_redirect)?;
+
     if let Some(builtin) = BuiltinCommand::from_str(command) {
-        // For builtins, handle redirects by capturing output
-        if parsed.stdout_redirect.is_some() {
-            // Builtins with stdout redirect - would need custom handling
-            // For now, just execute normally
-            builtin.execute(&args)?;
-        } else {
-            builtin.execute(&args)?;
-        }
+        builtin.execute(&args, &mut writer)?;
     } else {
         execute_external(command, &args, &parsed.stdout_redirect, &parsed.stderr_redirect)?;
     }
