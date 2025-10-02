@@ -3,8 +3,9 @@ use std::io::{self, Write};
 use std::env;
 use std::path::Path;
 use std::os::unix::fs::PermissionsExt;
-use std::process::Command as ProcessCommand;
+use std::process::{Command as ProcessCommand, Stdio};
 use std::os::unix::process::CommandExt;
+use std::fs::File;
 
 // Built-in commands
 enum BuiltinCommand {
@@ -103,26 +104,56 @@ fn find_in_path(command: &str) -> Option<String> {
     None
 }
 
-fn execute_external(command: &str, args: &[&str]) -> Result<()> {
+fn execute_external(
+    command: &str,
+    args: &[&str],
+    stdout_redirect: &Option<String>,
+    stderr_redirect: &Option<String>,
+) -> Result<()> {
     if let Some(path) = find_in_path(command) {
-        let output = ProcessCommand::new(path)
-            .arg0(command)
-            .args(args)
-            .output()?;
+        let mut cmd = ProcessCommand::new(path);
+        cmd.arg0(command).args(args);
 
-        print!("{}", String::from_utf8_lossy(&output.stdout));
-        print!("{}", String::from_utf8_lossy(&output.stderr));
+        // Set up stdout redirection
+        if let Some(stdout_file) = stdout_redirect {
+            let file = File::create(stdout_file)?;
+            cmd.stdout(Stdio::from(file));
+        }
+
+        // Set up stderr redirection
+        if let Some(stderr_file) = stderr_redirect {
+            let file = File::create(stderr_file)?;
+            cmd.stderr(Stdio::from(file));
+        }
+
+        let output = cmd.output()?;
+
+        // Only print if not redirected
+        if stdout_redirect.is_none() {
+            print!("{}", String::from_utf8_lossy(&output.stdout));
+        }
+        if stderr_redirect.is_none() {
+            print!("{}", String::from_utf8_lossy(&output.stderr));
+        }
     } else {
         println!("{}: command not found", command);
     }
     Ok(())
 }
 
-fn parse_arguments(input: &str) -> Vec<String> {
+struct ParsedCommand {
+    args: Vec<String>,
+    stdout_redirect: Option<String>,
+    stderr_redirect: Option<String>,
+}
+
+fn parse_arguments(input: &str) -> ParsedCommand {
     let mut args = Vec::new();
     let mut current_arg = String::new();
     let mut in_single_quote = false;
     let mut in_double_quote = false;
+    let mut stdout_redirect = None;
+    let mut stderr_redirect = None;
     let mut chars = input.chars().peekable();
 
     while let Some(ch) = chars.next() {
@@ -163,6 +194,90 @@ fn parse_arguments(input: &str) -> Vec<String> {
             '"' if !in_single_quote => {
                 in_double_quote = !in_double_quote;
             }
+            '>' if !in_single_quote && !in_double_quote => {
+                // Handle redirection
+                if !current_arg.is_empty() {
+                    args.push(current_arg.clone());
+                    current_arg.clear();
+                }
+
+                // Check if it's 1> or 2>
+                let fd = if let Some(last_arg) = args.last() {
+                    if last_arg == "1" {
+                        args.pop();
+                        1
+                    } else if last_arg == "2" {
+                        args.pop();
+                        2
+                    } else {
+                        1 // default to stdout
+                    }
+                } else {
+                    1 // default to stdout
+                };
+
+                // Skip whitespace after >
+                while let Some(&next_ch) = chars.peek() {
+                    if next_ch == ' ' || next_ch == '\t' {
+                        chars.next();
+                    } else {
+                        break;
+                    }
+                }
+
+                // Parse the filename
+                let mut filename = String::new();
+                let mut file_in_single_quote = false;
+                let mut file_in_double_quote = false;
+
+                while let Some(ch) = chars.next() {
+                    match ch {
+                        '\\' if file_in_single_quote => {
+                            filename.push(ch);
+                        }
+                        '\\' if file_in_double_quote => {
+                            if let Some(&next_ch) = chars.peek() {
+                                match next_ch {
+                                    '"' | '\\' | '$' | '`' | '\n' => {
+                                        chars.next();
+                                        filename.push(next_ch);
+                                    }
+                                    _ => {
+                                        filename.push(ch);
+                                    }
+                                }
+                            } else {
+                                filename.push(ch);
+                            }
+                        }
+                        '\\' => {
+                            if let Some(next_ch) = chars.next() {
+                                filename.push(next_ch);
+                            } else {
+                                filename.push(ch);
+                            }
+                        }
+                        '\'' if !file_in_double_quote => {
+                            file_in_single_quote = !file_in_single_quote;
+                        }
+                        '"' if !file_in_single_quote => {
+                            file_in_double_quote = !file_in_double_quote;
+                        }
+                        ' ' | '\t' if !file_in_single_quote && !file_in_double_quote => {
+                            break;
+                        }
+                        _ => {
+                            filename.push(ch);
+                        }
+                    }
+                }
+
+                if fd == 1 {
+                    stdout_redirect = Some(filename);
+                } else if fd == 2 {
+                    stderr_redirect = Some(filename);
+                }
+            }
             ' ' | '\t' if !in_single_quote && !in_double_quote => {
                 if !current_arg.is_empty() {
                     args.push(current_arg.clone());
@@ -179,22 +294,33 @@ fn parse_arguments(input: &str) -> Vec<String> {
         args.push(current_arg);
     }
 
-    args
+    ParsedCommand {
+        args,
+        stdout_redirect,
+        stderr_redirect,
+    }
 }
 
 fn parse_and_execute(input: &str) -> Result<()> {
-    let parts = parse_arguments(input);
-    if parts.is_empty() {
+    let parsed = parse_arguments(input);
+    if parsed.args.is_empty() {
         return Ok(());
     }
 
-    let command = &parts[0];
-    let args: Vec<&str> = parts[1..].iter().map(|s| s.as_str()).collect();
+    let command = &parsed.args[0];
+    let args: Vec<&str> = parsed.args[1..].iter().map(|s| s.as_str()).collect();
 
     if let Some(builtin) = BuiltinCommand::from_str(command) {
-        builtin.execute(&args)?;
+        // For builtins, handle redirects by capturing output
+        if parsed.stdout_redirect.is_some() {
+            // Builtins with stdout redirect - would need custom handling
+            // For now, just execute normally
+            builtin.execute(&args)?;
+        } else {
+            builtin.execute(&args)?;
+        }
     } else {
-        execute_external(command, &args)?;
+        execute_external(command, &args, &parsed.stdout_redirect, &parsed.stderr_redirect)?;
     }
 
     Ok(())
