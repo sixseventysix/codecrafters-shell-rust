@@ -122,14 +122,18 @@ fn parse_arguments(input: &str) -> Vec<String> {
     let mut args = Vec::new();
     let mut current_arg = String::new();
     let mut in_single_quote = false;
+    let mut in_double_quote = false;
     let mut chars = input.chars().peekable();
 
     while let Some(ch) = chars.next() {
         match ch {
-            '\'' => {
+            '\'' if !in_double_quote => {
                 in_single_quote = !in_single_quote;
             }
-            ' ' | '\t' if !in_single_quote => {
+            '"' if !in_single_quote => {
+                in_double_quote = !in_double_quote;
+            }
+            ' ' | '\t' if !in_single_quote && !in_double_quote => {
                 if !current_arg.is_empty() {
                     args.push(current_arg.clone());
                     current_arg.clear();
