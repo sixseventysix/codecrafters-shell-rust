@@ -12,6 +12,7 @@ enum BuiltinCommand {
     Echo,
     Type,
     Pwd,
+    Cd,
 }
 
 impl BuiltinCommand {
@@ -21,6 +22,7 @@ impl BuiltinCommand {
             "echo" => Some(Self::Echo),
             "type" => Some(Self::Type),
             "pwd" => Some(Self::Pwd),
+            "cd" => Some(Self::Cd),
             _ => None,
         }
     }
@@ -31,6 +33,7 @@ impl BuiltinCommand {
             Self::Echo => "echo",
             Self::Type => "type",
             Self::Pwd => "pwd",
+            Self::Cd => "cd",
         }
     }
 
@@ -61,6 +64,14 @@ impl BuiltinCommand {
             Self::Pwd => {
                 let current_dir = env::current_dir()?;
                 println!("{}", current_dir.display());
+                Ok(())
+            }
+            Self::Cd => {
+                if let Some(&path) = args.first() {
+                    if let Err(_) = env::set_current_dir(path) {
+                        println!("cd: {}: No such file or directory", path);
+                    }
+                }
                 Ok(())
             }
         }
