@@ -132,10 +132,19 @@ fn parse_arguments(input: &str) -> Vec<String> {
                 current_arg.push(ch);
             }
             '\\' if in_double_quote => {
-                // Inside double quotes, backslash escapes the next character
+                // Inside double quotes, backslash only escapes special characters
                 if let Some(&next_ch) = chars.peek() {
-                    chars.next();
-                    current_arg.push(next_ch);
+                    match next_ch {
+                        '"' | '\\' | '$' | '`' | '\n' => {
+                            // These characters can be escaped inside double quotes
+                            chars.next();
+                            current_arg.push(next_ch);
+                        }
+                        _ => {
+                            // For other characters, backslash is literal
+                            current_arg.push(ch);
+                        }
+                    }
                 } else {
                     current_arg.push(ch);
                 }
