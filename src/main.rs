@@ -118,19 +118,49 @@ fn execute_external(command: &str, args: &[&str]) -> Result<()> {
     Ok(())
 }
 
+fn parse_arguments(input: &str) -> Vec<String> {
+    let mut args = Vec::new();
+    let mut current_arg = String::new();
+    let mut in_single_quote = false;
+    let mut chars = input.chars().peekable();
+
+    while let Some(ch) = chars.next() {
+        match ch {
+            '\'' => {
+                in_single_quote = !in_single_quote;
+            }
+            ' ' | '\t' if !in_single_quote => {
+                if !current_arg.is_empty() {
+                    args.push(current_arg.clone());
+                    current_arg.clear();
+                }
+            }
+            _ => {
+                current_arg.push(ch);
+            }
+        }
+    }
+
+    if !current_arg.is_empty() {
+        args.push(current_arg);
+    }
+
+    args
+}
+
 fn parse_and_execute(input: &str) -> Result<()> {
-    let parts: Vec<&str> = input.split_whitespace().collect();
+    let parts = parse_arguments(input);
     if parts.is_empty() {
         return Ok(());
     }
 
-    let command = parts[0];
-    let args = &parts[1..];
+    let command = &parts[0];
+    let args: Vec<&str> = parts[1..].iter().map(|s| s.as_str()).collect();
 
     if let Some(builtin) = BuiltinCommand::from_str(command) {
-        builtin.execute(args)?;
+        builtin.execute(&args)?;
     } else {
-        execute_external(command, args)?;
+        execute_external(command, &args)?;
     }
 
     Ok(())
