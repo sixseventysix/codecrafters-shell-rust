@@ -7,8 +7,7 @@ mod path;
 
 use anyhow::{Context, Result};
 use rustyline::error::ReadlineError;
-use rustyline::{DefaultEditor, Editor};
-use rustyline::Helper;
+use rustyline::DefaultEditor;
 
 use builtins::BuiltinCommand;
 use completion::ShellCompleter;
@@ -37,31 +36,11 @@ fn parse_and_execute(input: &str) -> Result<()> {
 }
 
 // Helper struct to integrate our completer with rustyline
-#[derive(rustyline::Helper)]
+#[derive(rustyline::Helper, rustyline::Completer, rustyline::Hinter, rustyline::Validator, rustyline::Highlighter)]
 struct MyHelper {
+    #[rustyline(Completer)]
     completer: ShellCompleter,
 }
-
-impl rustyline::completion::Completer for MyHelper {
-    type Candidate = rustyline::completion::Pair;
-
-    fn complete(
-        &self,
-        line: &str,
-        pos: usize,
-        ctx: &rustyline::Context<'_>,
-    ) -> rustyline::Result<(usize, Vec<Self::Candidate>)> {
-        self.completer.complete(line, pos, ctx)
-    }
-}
-
-impl rustyline::hint::Hinter for MyHelper {
-    type Hint = String;
-}
-
-impl rustyline::highlight::Highlighter for MyHelper {}
-
-impl rustyline::validate::Validator for MyHelper {}
 
 fn main() -> Result<()> {
     let helper = MyHelper {

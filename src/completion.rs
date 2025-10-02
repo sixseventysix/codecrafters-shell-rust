@@ -1,5 +1,4 @@
 use rustyline::completion::{Completer, Pair};
-use rustyline::error::ReadlineError;
 use rustyline::{Context, Result};
 
 pub struct ShellCompleter {
