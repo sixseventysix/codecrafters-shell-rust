@@ -68,7 +68,13 @@ impl BuiltinCommand {
             }
             Self::Cd => {
                 if let Some(&path) = args.first() {
-                    if let Err(_) = env::set_current_dir(path) {
+                    let target_path = if path == "~" {
+                        env::var("HOME").unwrap_or_else(|_| path.to_string())
+                    } else {
+                        path.to_string()
+                    };
+
+                    if let Err(_) = env::set_current_dir(&target_path) {
                         println!("cd: {}: No such file or directory", path);
                     }
                 }
