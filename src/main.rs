@@ -1,13 +1,17 @@
 mod builtins;
+mod completion;
 mod executor;
 mod output;
 mod parser;
 mod path;
 
-use anyhow::Result;
-use std::io::{self, Write};
+use anyhow::{Context, Result};
+use rustyline::error::ReadlineError;
+use rustyline::{DefaultEditor, Editor};
+use rustyline::Helper;
 
 use builtins::BuiltinCommand;
+use completion::ShellCompleter;
 use executor::execute_external;
 use output::OutputWriter;
 use parser::parse_arguments;
@@ -32,15 +36,59 @@ fn parse_and_execute(input: &str) -> Result<()> {
     Ok(())
 }
 
-fn main() -> Result<()> {
-    loop {
-        print!("$ ");
-        io::stdout().flush()?;
+// Helper struct to integrate our completer with rustyline
+#[derive(rustyline::Helper)]
+struct MyHelper {
+    completer: ShellCompleter,
+}
 
-        let stdin = io::stdin();
-        let mut input = String::new();
-        stdin.read_line(&mut input)?;
+impl rustyline::completion::Completer for MyHelper {
+    type Candidate = rustyline::completion::Pair;
 
-        parse_and_execute(input.trim())?;
+    fn complete(
+        &self,
+        line: &str,
+        pos: usize,
+        ctx: &rustyline::Context<'_>,
+    ) -> rustyline::Result<(usize, Vec<Self::Candidate>)> {
+        self.completer.complete(line, pos, ctx)
     }
+}
+
+impl rustyline::hint::Hinter for MyHelper {
+    type Hint = String;
+}
+
+impl rustyline::highlight::Highlighter for MyHelper {}
+
+impl rustyline::validate::Validator for MyHelper {}
+
+fn main() -> Result<()> {
+    let helper = MyHelper {
+        completer: ShellCompleter::new(),
+    };
+
+    let mut rl = DefaultEditor::new().context("Failed to create readline editor")?;
+    rl.set_helper(Some(helper));
+
+    loop {
+        match rl.readline("$ ") {
+            Ok(line) => {
+                parse_and_execute(line.trim())?;
+            }
+            Err(ReadlineError::Interrupted) => {
+                // Ctrl-C
+                continue;
+            }
+            Err(ReadlineError::Eof) => {
+                // Ctrl-D
+                break;
+            }
+            Err(err) => {
+                return Err(err).context("Readline error")?;
+            }
+        }
+    }
+
+    Ok(())
 }
