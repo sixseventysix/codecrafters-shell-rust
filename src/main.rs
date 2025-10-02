@@ -127,6 +127,27 @@ fn parse_arguments(input: &str) -> Vec<String> {
 
     while let Some(ch) = chars.next() {
         match ch {
+            '\\' if in_single_quote => {
+                // Inside single quotes, backslash is literal
+                current_arg.push(ch);
+            }
+            '\\' if in_double_quote => {
+                // Inside double quotes, backslash escapes the next character
+                if let Some(&next_ch) = chars.peek() {
+                    chars.next();
+                    current_arg.push(next_ch);
+                } else {
+                    current_arg.push(ch);
+                }
+            }
+            '\\' => {
+                // Outside quotes, backslash escapes the next character
+                if let Some(next_ch) = chars.next() {
+                    current_arg.push(next_ch);
+                } else {
+                    current_arg.push(ch);
+                }
+            }
             '\'' if !in_double_quote => {
                 in_single_quote = !in_single_quote;
             }
