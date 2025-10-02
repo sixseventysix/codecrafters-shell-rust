@@ -7,7 +7,7 @@ mod path;
 
 use anyhow::{Context, Result};
 use rustyline::error::ReadlineError;
-use rustyline::DefaultEditor;
+use rustyline::{Editor, Config};
 
 use builtins::BuiltinCommand;
 use completion::ShellCompleter;
@@ -43,11 +43,12 @@ struct MyHelper {
 }
 
 fn main() -> Result<()> {
+    let config = Config::builder().build();
     let helper = MyHelper {
         completer: ShellCompleter::new(),
     };
 
-    let mut rl = DefaultEditor::new().context("Failed to create readline editor")?;
+    let mut rl = Editor::with_config(config).context("Failed to create readline editor")?;
     rl.set_helper(Some(helper));
 
     loop {
